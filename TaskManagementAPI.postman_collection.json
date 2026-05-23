@@ -155,7 +155,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"title\": \"Implement Login Feature\",\n  \"description\": \"Implement JWT-based login endpoint\",\n  \"dueDate\": \"2025-12-31T00:00:00Z\",\n  \"priority\": \"High\"\n}"
+              "raw": "{\n  \"title\": \"Implement Login Feature\",\n  \"description\": \"Implement JWT-based login endpoint\",\n  \"dueDate\": \"2027-12-31T00:00:00Z\",\n  \"priority\": \"High\"\n}"
             }
           },
           "event": [{
@@ -182,7 +182,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"title\": \"Updated Task Title\",\n  \"description\": \"Updated description\",\n  \"status\": \"InProgress\",\n  \"dueDate\": \"2025-12-31T00:00:00Z\",\n  \"priority\": \"Critical\"\n}"
+              "raw": "{\n  \"title\": \"Updated Task Title\",\n  \"description\": \"Updated description\",\n  \"status\": \"InProgress\",\n  \"dueDate\": \"2027-12-31T00:00:00Z\",\n  \"priority\": \"Critical\"\n}"
             }
           }
         },

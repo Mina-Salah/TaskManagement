@@ -31,10 +31,10 @@ public class MappingProfile : Profile
             .ForMember(d => d.Tasks, opt => opt.Ignore());
 
         CreateMap<Project, ProjectDto>()
-            .ForMember(d => d.TaskCount, opt => opt.MapFrom(s => s.Tasks.Count));
+            .ForCtorParam(nameof(ProjectDto.TaskCount), opt => opt.MapFrom(s => s.Tasks.Count));
 
         CreateMap<Project, ProjectDetailDto>()
-            .ForMember(d => d.Tasks, opt => opt.MapFrom(s => s.Tasks));
+            .ForCtorParam(nameof(ProjectDetailDto.Tasks), opt => opt.MapFrom(s => s.Tasks));
 
         // Task mappings
         CreateMap<CreateTaskCommand, ProjectTask>()
