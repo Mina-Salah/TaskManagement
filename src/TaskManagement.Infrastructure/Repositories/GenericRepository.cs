@@ -19,9 +19,6 @@ public class GenericRepository<TEntity> : IGenericRepository<TEntity> where TEnt
     public async Task<TEntity?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
         => await DbSet.FindAsync(new object[] { id }, cancellationToken);
 
-    public async Task<IReadOnlyList<TEntity>> GetAllAsync(CancellationToken cancellationToken = default)
-        => await DbSet.ToListAsync(cancellationToken);
-
     public async Task<TEntity?> FirstOrDefaultAsync(
         Expression<Func<TEntity, bool>> predicate,
         Func<IQueryable<TEntity>, IQueryable<TEntity>>? include = null,
