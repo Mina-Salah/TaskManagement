@@ -1,0 +1,28 @@
+## .NET
+*.user
+*.suo
+.vs/
+bin/
+obj/
+publish/
+*.nupkg
+*.snupkg
+
+## Logs
+logs/
+*.log
+
+## Environment
+.env
+appsettings.Local.json
+appsettings.Production.json
+
+## IDE
+.idea/
+.vscode/
+*.swp
+*.DS_Store
+
+## Docker volumes
+sqlserver_data/
+redis_data/
