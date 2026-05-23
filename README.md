@@ -75,7 +75,7 @@ dotnet run --project src/TaskManagement.API
 ```
 
 > **Note:** Migrations run automatically on startup — no manual `dotnet ef` needed.
-> Once running, Swagger opens at the root URL (e.g. `https://localhost:7241`). The exact port appears in the terminal.
+> Once running, Swagger opens at the root URL (e.g. `https://localhost:....`). The exact port appears in the terminal.
 
 ### 3.3 Configuration
 
@@ -89,7 +89,7 @@ Open `src/TaskManagement.API/appsettings.json` and update the following:
 }
 ```
 
-> For SQL auth: `Server=localhost;Database=TaskManagementDb;User Id=sa;Password=YourPassword;TrustServerCertificate=True;`
+
 
 #### Redis (optional)
 
@@ -98,7 +98,7 @@ Open `src/TaskManagement.API/appsettings.json` and update the following:
 ```
 
 > Leave empty to disable — a no-op fallback is used automatically.
-> To enable: `"Redis": "localhost:6379"`
+> To enable: `"Redis": "localhost:...."`
 
 #### JWT
 
