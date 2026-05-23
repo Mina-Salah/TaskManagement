@@ -31,8 +31,8 @@ public class ValidationBehavior<TRequest, TResponse> : IPipelineBehavior<TReques
 
         if (failures.Count != 0)
         {
-            var validationResult = new FluentValidation.Results.ValidationResult(failures);
-            throw new ValidationException(validationResult);
+            var errors = failures.Select(f => $"{f.PropertyName}: {f.ErrorMessage}").ToList();
+            throw new ValidationException(errors);
         }
 
         return await next();

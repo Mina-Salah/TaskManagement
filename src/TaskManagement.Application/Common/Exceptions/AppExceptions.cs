@@ -26,20 +26,11 @@ public class ConflictException : Exception
 
 public class ValidationException : Exception
 {
-    public IDictionary<string, string[]> Errors { get; }
+    public IList<string> Errors { get; }
 
-    public ValidationException(FluentValidation.Results.ValidationResult validationResult)
-        : base(BuildMessage(validationResult))
+    public ValidationException(IList<string> errors)
+        : base("One or more validation failures have occurred.")
     {
-        Errors = validationResult.ToDictionary();
-    }
-
-    private static string BuildMessage(FluentValidation.Results.ValidationResult validationResult)
-    {
-        var errors = validationResult.Errors
-            .Where(error => error is not null)
-            .Select(error => $"{error.PropertyName}: {error.ErrorMessage}");
-
-        return $"One or more validation failures have occurred. {string.Join(" ", errors)}";
+        Errors = errors;
     }
 }

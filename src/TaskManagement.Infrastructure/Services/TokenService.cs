@@ -39,14 +39,4 @@ public class TokenService : ITokenService
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
 
-    public Guid? GetUserIdFromToken(string token)
-    {
-        var handler = new JwtSecurityTokenHandler();
-        if (!handler.CanReadToken(token)) return null;
-
-        var jwtToken = handler.ReadJwtToken(token);
-        var sub = jwtToken.Claims.FirstOrDefault(c => c.Type == JwtRegisteredClaimNames.Sub)?.Value;
-
-        return Guid.TryParse(sub, out var id) ? id : null;
-    }
 }

@@ -37,8 +37,7 @@ public class ExceptionHandlingMiddleware
         {
             ValidationException vex => (
                 HttpStatusCode.BadRequest,
-                ApiResponse.FailResult("Validation failed",
-                    vex.Errors.SelectMany(e => e.Value).ToList())),
+                ApiResponse.FailResult("Validation failed", vex.Errors)),
 
             NotFoundException => (
                 HttpStatusCode.NotFound,

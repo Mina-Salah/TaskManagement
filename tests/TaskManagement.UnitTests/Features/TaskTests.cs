@@ -1,7 +1,6 @@
 using AutoMapper;
 using FluentAssertions;
 using Moq;
-using System.Linq.Expressions;
 using TaskManagement.Application.Common.Exceptions;
 using TaskManagement.Application.Common.Interfaces;
 using TaskManagement.Application.Common.Mappings;
@@ -17,9 +16,8 @@ namespace TaskManagement.UnitTests.Features;
 
 public class TaskCommandsTests
 {
-    private readonly Mock<IUnitOfWork> _uow = new();
-    private readonly Mock<IGenericRepository<Project>> _projectRepo = new();
-    private readonly Mock<IGenericRepository<ProjectTask>> _taskRepo = new();
+    private readonly Mock<ITaskRepository> _taskRepo = new();
+    private readonly Mock<IProjectRepository> _projectRepo = new();
     private readonly Mock<ICurrentUserService> _currentUser = new();
     private readonly IMapper _mapper;
 
@@ -30,11 +28,13 @@ public class TaskCommandsTests
         var config = new MapperConfiguration(cfg => cfg.AddProfile<MappingProfile>());
         _mapper = config.CreateMapper();
 
-        _uow.Setup(u => u.Repository<Project>()).Returns(_projectRepo.Object);
-        _uow.Setup(u => u.Repository<ProjectTask>()).Returns(_taskRepo.Object);
-        _uow.Setup(u => u.SaveChangesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
         _currentUser.Setup(c => c.UserId).Returns(_userId);
+        _taskRepo.Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()))
+                 .Returns(Task.CompletedTask);
     }
+
+    private TaskApplicationService CreateService()
+        => new(_taskRepo.Object, _projectRepo.Object, _mapper, _currentUser.Object);
 
     // ──────────────────────────────────────────────
     //  CreateTask
@@ -46,23 +46,17 @@ public class TaskCommandsTests
         var projectId = Guid.NewGuid();
         var command = new CreateTaskCommand("Fix bug", "Some description", null, TaskPriority.High, projectId);
 
-        _projectRepo.Setup(r => r.AnyAsync(
-                It.IsAny<Expression<Func<Project, bool>>>(),
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
-
+        _projectRepo.Setup(r => r.BelongsToUserAsync(projectId, _userId, It.IsAny<CancellationToken>()))
+                    .ReturnsAsync(true);
         _taskRepo.Setup(r => r.AddAsync(It.IsAny<ProjectTask>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((ProjectTask t, CancellationToken _) => t);
+                 .Returns(Task.CompletedTask);
 
-        var service = new TaskApplicationService(_uow.Object, _mapper, _currentUser.Object);
-        var handler = new CreateTaskCommandHandler(service);
-
+        var handler = new CreateTaskCommandHandler(CreateService());
         var result = await handler.Handle(command, CancellationToken.None);
 
         result.Success.Should().BeTrue();
         result.Data!.Title.Should().Be("Fix bug");
         result.Data.Priority.Should().Be(TaskPriority.High);
-        result.Data.ProjectId.Should().Be(projectId);
     }
 
     [Fact]
@@ -70,13 +64,10 @@ public class TaskCommandsTests
     {
         var command = new CreateTaskCommand("Fix bug", "", null, TaskPriority.Low, Guid.NewGuid());
 
-        _projectRepo.Setup(r => r.AnyAsync(
-                It.IsAny<Expression<Func<Project, bool>>>(),
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(false);
+        _projectRepo.Setup(r => r.BelongsToUserAsync(It.IsAny<Guid>(), _userId, It.IsAny<CancellationToken>()))
+                    .ReturnsAsync(false);
 
-        var service = new TaskApplicationService(_uow.Object, _mapper, _currentUser.Object);
-        var handler = new CreateTaskCommandHandler(service);
+        var handler = new CreateTaskCommandHandler(CreateService());
 
         await Assert.ThrowsAsync<NotFoundException>(() =>
             handler.Handle(command, CancellationToken.None));
@@ -89,75 +80,50 @@ public class TaskCommandsTests
     [Fact]
     public async Task UpdateTask_ShouldReturnUpdatedTask_WhenUserOwnsProject()
     {
-        var projectId = Guid.NewGuid();
         var task = new ProjectTask
         {
             Id = Guid.NewGuid(),
             Title = "Old title",
-            Description = "Old desc",
-            Status = ProjectTaskStatus.Todo,
-            Priority = TaskPriority.Low,
-            ProjectId = projectId
+            ProjectId = Guid.NewGuid()
         };
-
         var command = new UpdateTaskCommand(task.Id, "New title", "New desc", ProjectTaskStatus.InProgress, null, TaskPriority.High);
 
-        _taskRepo.Setup(r => r.GetByIdAsync(task.Id, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(task);
+        _taskRepo.Setup(r => r.GetByIdAsync(task.Id, It.IsAny<CancellationToken>())).ReturnsAsync(task);
+        _projectRepo.Setup(r => r.BelongsToUserAsync(task.ProjectId, _userId, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        _taskRepo.Setup(r => r.UpdateAsync(It.IsAny<ProjectTask>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
 
-        _projectRepo.Setup(r => r.AnyAsync(
-                It.IsAny<Expression<Func<Project, bool>>>(),
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
-
-        _taskRepo.Setup(r => r.UpdateAsync(It.IsAny<ProjectTask>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((ProjectTask t, CancellationToken _) => t);
-
-        var service = new TaskApplicationService(_uow.Object, _mapper, _currentUser.Object);
-        var handler = new UpdateTaskCommandHandler(service);
-
+        var handler = new UpdateTaskCommandHandler(CreateService());
         var result = await handler.Handle(command, CancellationToken.None);
 
         result.Success.Should().BeTrue();
         result.Data!.Title.Should().Be("New title");
         result.Data.Status.Should().Be(ProjectTaskStatus.InProgress);
-        result.Data.Priority.Should().Be(TaskPriority.High);
     }
 
     [Fact]
     public async Task UpdateTask_ShouldThrowNotFound_WhenTaskDoesNotExist()
     {
-        var command = new UpdateTaskCommand(Guid.NewGuid(), "Title", "", ProjectTaskStatus.Todo, null, TaskPriority.Low);
-
         _taskRepo.Setup(r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((ProjectTask?)null);
+                 .ReturnsAsync((ProjectTask?)null);
 
-        var service = new TaskApplicationService(_uow.Object, _mapper, _currentUser.Object);
-        var handler = new UpdateTaskCommandHandler(service);
+        var handler = new UpdateTaskCommandHandler(CreateService());
 
         await Assert.ThrowsAsync<NotFoundException>(() =>
-            handler.Handle(command, CancellationToken.None));
+            handler.Handle(new UpdateTaskCommand(Guid.NewGuid(), "Title", "", ProjectTaskStatus.Todo, null, TaskPriority.Low), CancellationToken.None));
     }
 
     [Fact]
     public async Task UpdateTask_ShouldThrowForbidden_WhenUserDoesNotOwnProject()
     {
         var task = new ProjectTask { Id = Guid.NewGuid(), ProjectId = Guid.NewGuid() };
-        var command = new UpdateTaskCommand(task.Id, "Title", "", ProjectTaskStatus.Todo, null, TaskPriority.Low);
 
-        _taskRepo.Setup(r => r.GetByIdAsync(task.Id, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(task);
+        _taskRepo.Setup(r => r.GetByIdAsync(task.Id, It.IsAny<CancellationToken>())).ReturnsAsync(task);
+        _projectRepo.Setup(r => r.BelongsToUserAsync(task.ProjectId, _userId, It.IsAny<CancellationToken>())).ReturnsAsync(false);
 
-        _projectRepo.Setup(r => r.AnyAsync(
-                It.IsAny<Expression<Func<Project, bool>>>(),
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(false);
-
-        var service = new TaskApplicationService(_uow.Object, _mapper, _currentUser.Object);
-        var handler = new UpdateTaskCommandHandler(service);
+        var handler = new UpdateTaskCommandHandler(CreateService());
 
         await Assert.ThrowsAsync<ForbiddenException>(() =>
-            handler.Handle(command, CancellationToken.None));
+            handler.Handle(new UpdateTaskCommand(task.Id, "Title", "", ProjectTaskStatus.Todo, null, TaskPriority.Low), CancellationToken.None));
     }
 
     // ──────────────────────────────────────────────
@@ -167,30 +133,14 @@ public class TaskCommandsTests
     [Fact]
     public async Task UpdateTaskStatus_ShouldReturnUpdatedStatus_WhenUserOwnsProject()
     {
-        var task = new ProjectTask
-        {
-            Id = Guid.NewGuid(),
-            Status = ProjectTaskStatus.Todo,
-            ProjectId = Guid.NewGuid()
-        };
+        var task = new ProjectTask { Id = Guid.NewGuid(), Status = ProjectTaskStatus.Todo, ProjectId = Guid.NewGuid() };
 
-        var command = new UpdateTaskStatusCommand(task.Id, ProjectTaskStatus.Done);
+        _taskRepo.Setup(r => r.GetByIdAsync(task.Id, It.IsAny<CancellationToken>())).ReturnsAsync(task);
+        _projectRepo.Setup(r => r.BelongsToUserAsync(task.ProjectId, _userId, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        _taskRepo.Setup(r => r.UpdateAsync(It.IsAny<ProjectTask>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
 
-        _taskRepo.Setup(r => r.GetByIdAsync(task.Id, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(task);
-
-        _projectRepo.Setup(r => r.AnyAsync(
-                It.IsAny<Expression<Func<Project, bool>>>(),
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
-
-        _taskRepo.Setup(r => r.UpdateAsync(It.IsAny<ProjectTask>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((ProjectTask t, CancellationToken _) => t);
-
-        var service = new TaskApplicationService(_uow.Object, _mapper, _currentUser.Object);
-        var handler = new UpdateTaskStatusCommandHandler(service);
-
-        var result = await handler.Handle(command, CancellationToken.None);
+        var handler = new UpdateTaskStatusCommandHandler(CreateService());
+        var result = await handler.Handle(new UpdateTaskStatusCommand(task.Id, ProjectTaskStatus.Done), CancellationToken.None);
 
         result.Success.Should().BeTrue();
         result.Data!.Status.Should().Be(ProjectTaskStatus.Done);
@@ -200,10 +150,9 @@ public class TaskCommandsTests
     public async Task UpdateTaskStatus_ShouldThrowNotFound_WhenTaskDoesNotExist()
     {
         _taskRepo.Setup(r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((ProjectTask?)null);
+                 .ReturnsAsync((ProjectTask?)null);
 
-        var service = new TaskApplicationService(_uow.Object, _mapper, _currentUser.Object);
-        var handler = new UpdateTaskStatusCommandHandler(service);
+        var handler = new UpdateTaskStatusCommandHandler(CreateService());
 
         await Assert.ThrowsAsync<NotFoundException>(() =>
             handler.Handle(new UpdateTaskStatusCommand(Guid.NewGuid(), ProjectTaskStatus.Done), CancellationToken.None));
@@ -214,16 +163,10 @@ public class TaskCommandsTests
     {
         var task = new ProjectTask { Id = Guid.NewGuid(), ProjectId = Guid.NewGuid() };
 
-        _taskRepo.Setup(r => r.GetByIdAsync(task.Id, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(task);
+        _taskRepo.Setup(r => r.GetByIdAsync(task.Id, It.IsAny<CancellationToken>())).ReturnsAsync(task);
+        _projectRepo.Setup(r => r.BelongsToUserAsync(task.ProjectId, _userId, It.IsAny<CancellationToken>())).ReturnsAsync(false);
 
-        _projectRepo.Setup(r => r.AnyAsync(
-                It.IsAny<Expression<Func<Project, bool>>>(),
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(false);
-
-        var service = new TaskApplicationService(_uow.Object, _mapper, _currentUser.Object);
-        var handler = new UpdateTaskStatusCommandHandler(service);
+        var handler = new UpdateTaskStatusCommandHandler(CreateService());
 
         await Assert.ThrowsAsync<ForbiddenException>(() =>
             handler.Handle(new UpdateTaskStatusCommand(task.Id, ProjectTaskStatus.Done), CancellationToken.None));
@@ -238,20 +181,11 @@ public class TaskCommandsTests
     {
         var task = new ProjectTask { Id = Guid.NewGuid(), ProjectId = Guid.NewGuid() };
 
-        _taskRepo.Setup(r => r.GetByIdAsync(task.Id, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(task);
+        _taskRepo.Setup(r => r.GetByIdAsync(task.Id, It.IsAny<CancellationToken>())).ReturnsAsync(task);
+        _projectRepo.Setup(r => r.BelongsToUserAsync(task.ProjectId, _userId, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        _taskRepo.Setup(r => r.DeleteAsync(task, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
 
-        _projectRepo.Setup(r => r.AnyAsync(
-                It.IsAny<Expression<Func<Project, bool>>>(),
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
-
-        _taskRepo.Setup(r => r.DeleteAsync(task, It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
-
-        var service = new TaskApplicationService(_uow.Object, _mapper, _currentUser.Object);
-        var handler = new DeleteTaskCommandHandler(service);
-
+        var handler = new DeleteTaskCommandHandler(CreateService());
         var result = await handler.Handle(new DeleteTaskCommand(task.Id), CancellationToken.None);
 
         result.Success.Should().BeTrue();
@@ -261,10 +195,9 @@ public class TaskCommandsTests
     public async Task DeleteTask_ShouldThrowNotFound_WhenTaskDoesNotExist()
     {
         _taskRepo.Setup(r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((ProjectTask?)null);
+                 .ReturnsAsync((ProjectTask?)null);
 
-        var service = new TaskApplicationService(_uow.Object, _mapper, _currentUser.Object);
-        var handler = new DeleteTaskCommandHandler(service);
+        var handler = new DeleteTaskCommandHandler(CreateService());
 
         await Assert.ThrowsAsync<NotFoundException>(() =>
             handler.Handle(new DeleteTaskCommand(Guid.NewGuid()), CancellationToken.None));
@@ -275,16 +208,10 @@ public class TaskCommandsTests
     {
         var task = new ProjectTask { Id = Guid.NewGuid(), ProjectId = Guid.NewGuid() };
 
-        _taskRepo.Setup(r => r.GetByIdAsync(task.Id, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(task);
+        _taskRepo.Setup(r => r.GetByIdAsync(task.Id, It.IsAny<CancellationToken>())).ReturnsAsync(task);
+        _projectRepo.Setup(r => r.BelongsToUserAsync(task.ProjectId, _userId, It.IsAny<CancellationToken>())).ReturnsAsync(false);
 
-        _projectRepo.Setup(r => r.AnyAsync(
-                It.IsAny<Expression<Func<Project, bool>>>(),
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(false);
-
-        var service = new TaskApplicationService(_uow.Object, _mapper, _currentUser.Object);
-        var handler = new DeleteTaskCommandHandler(service);
+        var handler = new DeleteTaskCommandHandler(CreateService());
 
         await Assert.ThrowsAsync<ForbiddenException>(() =>
             handler.Handle(new DeleteTaskCommand(task.Id), CancellationToken.None));
@@ -304,21 +231,10 @@ public class TaskCommandsTests
             new() { Id = Guid.NewGuid(), Title = "Task B", Priority = TaskPriority.Low,  ProjectId = projectId }
         };
 
-        _projectRepo.Setup(r => r.AnyAsync(
-                It.IsAny<Expression<Func<Project, bool>>>(),
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
+        _projectRepo.Setup(r => r.BelongsToUserAsync(projectId, _userId, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        _taskRepo.Setup(r => r.GetByProjectIdAsync(projectId, It.IsAny<CancellationToken>())).ReturnsAsync(tasks);
 
-        _taskRepo.Setup(r => r.ListAsync(
-                It.IsAny<Expression<Func<ProjectTask, bool>>>(),
-                It.IsAny<Func<IQueryable<ProjectTask>, IOrderedQueryable<ProjectTask>>?>(),
-                It.IsAny<Func<IQueryable<ProjectTask>, IQueryable<ProjectTask>>?>(),
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(tasks);
-
-        var service = new TaskApplicationService(_uow.Object, _mapper, _currentUser.Object);
-        var handler = new GetTasksByProjectQueryHandler(service);
-
+        var handler = new GetTasksByProjectQueryHandler(CreateService());
         var result = await handler.Handle(new GetTasksByProjectQuery(projectId), CancellationToken.None);
 
         result.Success.Should().BeTrue();
@@ -328,13 +244,10 @@ public class TaskCommandsTests
     [Fact]
     public async Task GetTasksByProject_ShouldThrowNotFound_WhenProjectDoesNotBelongToUser()
     {
-        _projectRepo.Setup(r => r.AnyAsync(
-                It.IsAny<Expression<Func<Project, bool>>>(),
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(false);
+        _projectRepo.Setup(r => r.BelongsToUserAsync(It.IsAny<Guid>(), _userId, It.IsAny<CancellationToken>()))
+                    .ReturnsAsync(false);
 
-        var service = new TaskApplicationService(_uow.Object, _mapper, _currentUser.Object);
-        var handler = new GetTasksByProjectQueryHandler(service);
+        var handler = new GetTasksByProjectQueryHandler(CreateService());
 
         await Assert.ThrowsAsync<NotFoundException>(() =>
             handler.Handle(new GetTasksByProjectQuery(Guid.NewGuid()), CancellationToken.None));

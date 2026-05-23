@@ -9,23 +9,22 @@ namespace TaskManagement.Application.Common.Services;
 
 public class AuthApplicationService : IAuthApplicationService
 {
-    private readonly IUnitOfWork _uow;
+    private readonly IUserRepository _userRepository;
     private readonly IPasswordService _passwordService;
     private readonly ITokenService _tokenService;
 
-    public AuthApplicationService(IUnitOfWork uow, IPasswordService passwordService, ITokenService tokenService)
+    public AuthApplicationService(IUserRepository userRepository, IPasswordService passwordService, ITokenService tokenService)
     {
-        _uow = uow;
+        _userRepository = userRepository;
         _passwordService = passwordService;
         _tokenService = tokenService;
     }
 
     public async Task<ApiResponse<AuthResponseDto>> RegisterAsync(RegisterCommand request, CancellationToken cancellationToken = default)
     {
-        var users = _uow.Repository<User>();
         var email = request.Email.ToLower().Trim();
 
-        if (await users.AnyAsync(user => user.Email == email, cancellationToken))
+        if (await _userRepository.ExistsByEmailAsync(email, cancellationToken))
             throw new ConflictException("Email is already registered.");
 
         var user = new User
@@ -35,8 +34,8 @@ public class AuthApplicationService : IAuthApplicationService
             PasswordHash = _passwordService.HashPassword(request.Password)
         };
 
-        await users.AddAsync(user, cancellationToken);
-        await _uow.SaveChangesAsync(cancellationToken);
+        await _userRepository.AddAsync(user, cancellationToken);
+        await _userRepository.SaveChangesAsync(cancellationToken);
 
         var token = _tokenService.GenerateToken(user);
 
@@ -48,7 +47,8 @@ public class AuthApplicationService : IAuthApplicationService
     public async Task<ApiResponse<AuthResponseDto>> LoginAsync(LoginCommand request, CancellationToken cancellationToken = default)
     {
         var email = request.Email.ToLower().Trim();
-        var user = await _uow.Repository<User>().FirstOrDefaultAsync(user => user.Email == email, cancellationToken: cancellationToken)
+
+        var user = await _userRepository.FindByEmailAsync(email, cancellationToken)
             ?? throw new BadRequestException("Invalid email or password.");
 
         if (!_passwordService.VerifyPassword(request.Password, user.PasswordHash))

@@ -11,49 +11,42 @@ namespace TaskManagement.Application.Common.Services;
 
 public class TaskApplicationService : ITaskApplicationService
 {
-    private readonly IUnitOfWork _uow;
+    private readonly ITaskRepository _taskRepository;
+    private readonly IProjectRepository _projectRepository;
     private readonly IMapper _mapper;
     private readonly ICurrentUserService _currentUser;
 
-    public TaskApplicationService(IUnitOfWork uow, IMapper mapper, ICurrentUserService currentUser)
+    public TaskApplicationService(
+        ITaskRepository taskRepository,
+        IProjectRepository projectRepository,
+        IMapper mapper,
+        ICurrentUserService currentUser)
     {
-        _uow = uow;
+        _taskRepository = taskRepository;
+        _projectRepository = projectRepository;
         _mapper = mapper;
         _currentUser = currentUser;
     }
 
     public async Task<ApiResponse<TaskDto>> CreateAsync(CreateTaskCommand request, CancellationToken cancellationToken = default)
     {
-        var projects = _uow.Repository<Project>();
-        var tasks = _uow.Repository<ProjectTask>();
-
-        var projectExists = await projects.AnyAsync(
-            project => project.Id == request.ProjectId && project.UserId == _currentUser.UserId,
-            cancellationToken);
-        if (!projectExists)
+        if (!await _projectRepository.BelongsToUserAsync(request.ProjectId, _currentUser.UserId, cancellationToken))
             throw new NotFoundException("Project", request.ProjectId);
 
         var task = _mapper.Map<ProjectTask>(request);
 
-        await tasks.AddAsync(task, cancellationToken);
-        await _uow.SaveChangesAsync(cancellationToken);
+        await _taskRepository.AddAsync(task, cancellationToken);
+        await _taskRepository.SaveChangesAsync(cancellationToken);
 
-        var dto = _mapper.Map<TaskDto>(task);
-        return ApiResponse<TaskDto>.SuccessResult(dto, "Task created successfully.");
+        return ApiResponse<TaskDto>.SuccessResult(_mapper.Map<TaskDto>(task), "Task created successfully.");
     }
 
     public async Task<ApiResponse<TaskDto>> UpdateAsync(UpdateTaskCommand request, CancellationToken cancellationToken = default)
     {
-        var projects = _uow.Repository<Project>();
-        var tasks = _uow.Repository<ProjectTask>();
-
-        var task = await tasks.GetByIdAsync(request.TaskId, cancellationToken)
+        var task = await _taskRepository.GetByIdAsync(request.TaskId, cancellationToken)
             ?? throw new NotFoundException("Task", request.TaskId);
 
-        var projectExists = await projects.AnyAsync(
-            project => project.Id == task.ProjectId && project.UserId == _currentUser.UserId,
-            cancellationToken);
-        if (!projectExists)
+        if (!await _projectRepository.BelongsToUserAsync(task.ProjectId, _currentUser.UserId, cancellationToken))
             throw new ForbiddenException();
 
         task.Title = request.Title;
@@ -61,76 +54,50 @@ public class TaskApplicationService : ITaskApplicationService
         task.Status = request.Status;
         task.DueDate = request.DueDate;
         task.Priority = request.Priority;
-        task.UpdatedAt = DateTime.UtcNow;
 
-        await tasks.UpdateAsync(task, cancellationToken);
-        await _uow.SaveChangesAsync(cancellationToken);
+        await _taskRepository.UpdateAsync(task, cancellationToken);
+        await _taskRepository.SaveChangesAsync(cancellationToken);
 
-        var dto = _mapper.Map<TaskDto>(task);
-        return ApiResponse<TaskDto>.SuccessResult(dto, "Task updated successfully.");
+        return ApiResponse<TaskDto>.SuccessResult(_mapper.Map<TaskDto>(task), "Task updated successfully.");
     }
 
     public async Task<ApiResponse<TaskDto>> UpdateStatusAsync(UpdateTaskStatusCommand request, CancellationToken cancellationToken = default)
     {
-        var projects = _uow.Repository<Project>();
-        var tasks = _uow.Repository<ProjectTask>();
-
-        var task = await tasks.GetByIdAsync(request.TaskId, cancellationToken)
+        var task = await _taskRepository.GetByIdAsync(request.TaskId, cancellationToken)
             ?? throw new NotFoundException("Task", request.TaskId);
 
-        var projectExists = await projects.AnyAsync(
-            project => project.Id == task.ProjectId && project.UserId == _currentUser.UserId,
-            cancellationToken);
-        if (!projectExists)
+        if (!await _projectRepository.BelongsToUserAsync(task.ProjectId, _currentUser.UserId, cancellationToken))
             throw new ForbiddenException();
 
         task.Status = request.Status;
-        task.UpdatedAt = DateTime.UtcNow;
 
-        await tasks.UpdateAsync(task, cancellationToken);
-        await _uow.SaveChangesAsync(cancellationToken);
+        await _taskRepository.UpdateAsync(task, cancellationToken);
+        await _taskRepository.SaveChangesAsync(cancellationToken);
 
-        var dto = _mapper.Map<TaskDto>(task);
-        return ApiResponse<TaskDto>.SuccessResult(dto, "Task status updated.");
+        return ApiResponse<TaskDto>.SuccessResult(_mapper.Map<TaskDto>(task), "Task status updated.");
     }
 
     public async Task<ApiResponse> DeleteAsync(DeleteTaskCommand request, CancellationToken cancellationToken = default)
     {
-        var projects = _uow.Repository<Project>();
-        var tasks = _uow.Repository<ProjectTask>();
-
-        var task = await tasks.GetByIdAsync(request.TaskId, cancellationToken)
+        var task = await _taskRepository.GetByIdAsync(request.TaskId, cancellationToken)
             ?? throw new NotFoundException("Task", request.TaskId);
 
-        var projectExists = await projects.AnyAsync(
-            project => project.Id == task.ProjectId && project.UserId == _currentUser.UserId,
-            cancellationToken);
-        if (!projectExists)
+        if (!await _projectRepository.BelongsToUserAsync(task.ProjectId, _currentUser.UserId, cancellationToken))
             throw new ForbiddenException();
 
-        await tasks.DeleteAsync(task, cancellationToken);
-        await _uow.SaveChangesAsync(cancellationToken);
+        await _taskRepository.DeleteAsync(task, cancellationToken);
+        await _taskRepository.SaveChangesAsync(cancellationToken);
 
         return ApiResponse.SuccessResult("Task deleted successfully.");
     }
 
     public async Task<ApiResponse<IEnumerable<TaskDto>>> GetByProjectAsync(GetTasksByProjectQuery request, CancellationToken cancellationToken = default)
     {
-        var projects = _uow.Repository<Project>();
-        var tasksRepository = _uow.Repository<ProjectTask>();
-
-        var projectExists = await projects.AnyAsync(
-            project => project.Id == request.ProjectId && project.UserId == _currentUser.UserId,
-            cancellationToken);
-        if (!projectExists)
+        if (!await _projectRepository.BelongsToUserAsync(request.ProjectId, _currentUser.UserId, cancellationToken))
             throw new NotFoundException("Project", request.ProjectId);
 
-        var tasks = await tasksRepository.ListAsync(
-            task => task.ProjectId == request.ProjectId,
-            query => query.OrderByDescending(task => task.Priority).ThenByDescending(task => task.CreatedAt),
-            cancellationToken: cancellationToken);
-        var dtos = _mapper.Map<IEnumerable<TaskDto>>(tasks);
+        var tasks = await _taskRepository.GetByProjectIdAsync(request.ProjectId, cancellationToken);
 
-        return ApiResponse<IEnumerable<TaskDto>>.SuccessResult(dtos);
+        return ApiResponse<IEnumerable<TaskDto>>.SuccessResult(_mapper.Map<IEnumerable<TaskDto>>(tasks));
     }
 }

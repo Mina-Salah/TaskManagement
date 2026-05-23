@@ -330,9 +330,9 @@ Reads and writes are completely separated. Each command or query has exactly one
 
 Every project/task operation verifies the resource belongs to the current user. A valid JWT alone is not enough — accessing another user's resource returns `403`, not `404`, to avoid leaking resource existence.
 
-### 9.3 Generic Repository + Unit of Work
+### 9.3 Specific Repositories
 
-EF Core is abstracted behind `IGenericRepository<T>` and `IUnitOfWork`. The Application layer never imports EF Core directly, keeping domain logic clean and unit testing straightforward with Moq.
+EF Core is abstracted behind dedicated repository interfaces (`IUserRepository`, `IProjectRepository`, `ITaskRepository`) defined in the Domain layer. Each repository exposes only the operations relevant to its aggregate, keeping contracts focused and avoiding the over-generalization of a single generic interface. The Application layer never imports EF Core directly, keeping domain logic clean and unit testing straightforward with Moq.
 
 ### 9.4 Global Exception Middleware
 
